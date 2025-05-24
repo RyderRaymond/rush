@@ -1,16 +1,17 @@
+use std::env::set_current_dir;
 use std::io::{self, stdout, Write};
-use std::process::Command;
-use std::env;
+use std::process::{exit, Command};
+//use std::env;
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    for arg in args {
-        println!("{}", &arg);
-    }
+fn main() -> ! {
+    // let args: Vec<String> = env::args().collect();
+    // for arg in args {
+    //     println!("{}", &arg);
+    // }
 
-    for (key, value) in std::env::vars() {
-        println!("{key}: {value}");
-    }
+    // for (key, value) in std::env::vars() {
+    //     println!("{key}: {value}");
+    // }
 
     loop {
         print!("$ ");
@@ -31,11 +32,7 @@ fn main() {
             None => (),
         }
 
-        println!("Executing: {}", &command);
-
-        if command == "exit" {
-            return;
-        }
+        //println!("Executing: {}", &command);
 
         let command_vector: Vec<&str> = command.split(" ").collect();
 
@@ -48,9 +45,18 @@ fn main() {
             continue;
         }
 
+        let argument_vector = match command_vector.len() > 1 {
+            true => &command_vector[1..],
+            false => &[]
+        };
+
+        if is_builtin_command(command, argument_vector) {
+            continue;
+        }
+
         let mut command = Command::new(command);
 
-        command.args(&command_vector[1..command_vector.len()]);
+        command.args(argument_vector);
 
         let command = command.spawn();
 
@@ -66,4 +72,50 @@ fn main() {
             }
         }
     }
+}
+
+fn is_builtin_command(command: &str, argument_vector: &[&str]) -> bool {
+    match command {
+        "exit" => {
+            builtin_exit(argument_vector);
+            return true;
+        }
+        "cd" => {
+            builtin_cd(argument_vector);
+            return true;
+        }
+        _ => false
+    }
+}
+
+fn usage_error(message: &str) {
+    eprintln!("rush: {}", message);
+}
+
+fn builtin_exit(argument_vector: &[&str]) {
+    if argument_vector.len() == 0 {
+        exit(0);
+    }
+
+    let exit_val: i32 = match argument_vector[0].trim().parse::<i32>() {
+        Ok(num) => num,
+        Err(_) => {
+            usage_error(&format!("exit {}: numeric argument required", argument_vector[0]));
+            1
+        }
+    };
+
+    exit(exit_val);
+}
+
+fn builtin_cd(argument_vector: &[&str]) {
+    let directory = match argument_vector.get(0) {
+        None => "/", //we'll have to implement $HOME later
+        Some(dir) => dir
+    };
+
+    match set_current_dir(directory) {
+        Ok(_) => (),
+        Err(error) => eprintln!("{}", error)
+    };
 }
