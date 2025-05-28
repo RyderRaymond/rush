@@ -4,3 +4,6 @@ Plans for the future (in no particular order)
 2. Handling signals (ctrl + c does not kill rush, ctrl + Z)
 3. Config file
 4. Custom path (idk why it currently gets it from Konsole)
+5. Printing env variables
+5. Autocomplete
+6. Autofill

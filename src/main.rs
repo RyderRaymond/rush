@@ -1,77 +1,144 @@
 use std::env::set_current_dir;
-use std::io::{self, stdout, Write};
+use std::io::{self, Read, Write};
 use std::process::{exit, Command};
+use termion::cursor;
+use termion::raw::IntoRawMode;
 //use std::env;
 
-fn main() -> ! {
-    // let args: Vec<String> = env::args().collect();
-    // for arg in args {
-    //     println!("{}", &arg);
-    // }
+struct RushTerminal {
+    program_name: String,
+}
 
-    // for (key, value) in std::env::vars() {
-    //     println!("{key}: {value}");
-    // }
+impl RushTerminal {
+    fn repl_loop(&mut self) {
+    //  let args: Vec<String> = env::args().collect();
+        // for arg in args {
+        //     println!("{}", &arg);
+        // }
 
-    loop {
-        print!("$ ");
-        stdout().flush().unwrap_or_else(|error| {
-            panic!("Could not write shell prompt: {error:?}");
-        });
+        // for (key, value) in std::env::vars() {
+        //     println!("{key}: {value}");
+        // }
 
-        let mut command = String::new();
-        io::stdin()
-        .read_line(&mut command)
-        .expect("Quitting because we had a read error yippee");
+        loop {
+            io::stdout().flush();
+            write!(io::stdout(), "$ ");
+            io::stdout().flush().unwrap_or_else(|error| {
+                panic!("Could not write shell prompt: {error:?}");
+            });
 
-        //Remove trailing newline
-        let newline_pos = command.rfind("\n");
+            // let mut command = String::new();
+            // io::stdin()
+            // .read_line(&mut command)
+            // .expect("Quitting because we had a read error yippee");
 
-        match newline_pos {
-            Some(position) => {command.remove(position);},
-            None => (),
-        }
+            let mut command = self.get_command();
 
-        //println!("Executing: {}", &command);
+            //Remove trailing newline
+            let newline_pos = command.rfind("\n");
 
-        let command_vector: Vec<&str> = command.split(" ").collect();
+            match newline_pos {
+                Some(position) => {command.remove(position);},
+                None => (),
+            }
 
-        let command = match command_vector.get(0) {
-            Some(val) => val,
-            None => continue,
-        };
+            //println!("Executing: {}", &command);
 
-        if command.len() < 1 {
-            continue;
-        }
+            let command_vector: Vec<&str> = command.split(" ").collect();
 
-        let argument_vector = match command_vector.len() > 1 {
-            true => &command_vector[1..],
-            false => &[]
-        };
+            let command_name = match command_vector.get(0) {
+                Some(val) => val,
+                None => continue,
+            };
 
-        if is_builtin_command(command, argument_vector) {
-            continue;
-        }
-
-        let mut command = Command::new(command);
-
-        command.args(argument_vector);
-
-        let command = command.spawn();
-
-        match command {
-            Ok(mut child) => {
-                stdout().flush().expect("Failed to write to screen");
-                child.wait().expect("");
-            },
-            Err(error) => {
-                println!("Failed to run command: {error:?}");
-                stdout().flush().expect("Failed to write to screen");
+            if command_name.len() < 1 {
                 continue;
             }
+
+            let argument_vector = match command_vector.len() > 1 {
+                true => &command_vector[1..],
+                false => &[]
+            };
+
+            if is_builtin_command(command_name, argument_vector) {
+                continue;
+            }
+
+            let mut command = Command::new(command_name);
+
+            command.args(argument_vector);
+
+            let command = command.spawn();
+
+            match command {
+                Ok(mut child) => {
+                    io::stdout().flush().expect("Failed to write to screen");
+                    child.wait().expect("");
+                },
+                Err(error) => {
+                    println!("Failed to run command {command_name}: {}", error.to_string());
+                    io::stdout().flush().expect("Failed to write to screen");
+                }
+            }
+            io::stdout().flush();
+            write!(io::stdout(), "\n\r");
+            io::stdout().flush();
         }
     }
+
+    fn get_command(&mut self) -> String {
+        let mut stdout = io::stdout().lock().into_raw_mode().unwrap();
+        let mut stdin = io::stdin();
+        let mut command = String::new();
+
+        loop {
+            let mut buffer = [0; 1];
+
+            stdin.read_exact(&mut buffer).unwrap();
+
+            match buffer[0] {
+                13 => {
+                    command.push('\n');
+                    write!(stdout, "\n\r");
+                    stdout.flush();
+                    break;
+                },
+
+                127 => {
+                    print!("{}", command.len());
+                    if command.len() > 0 {
+                        command.pop();
+                        stdout.write(&[8, 32]);
+                        write!(stdout, "{}", termion::cursor::Left(1));
+                        stdout.flush();
+                        continue;
+                    }
+                }
+
+                _ => ()
+            }
+
+            let curr_char = match str::from_utf8(&buffer) {
+                Ok(ch) => ch,
+                Err(_) => continue,
+            };
+
+            command.push_str(curr_char);
+            stdout.write(&buffer).unwrap();
+            stdout.flush().unwrap();
+        }
+
+        return command;
+    }
+
+}
+
+fn main() {
+    let mut terminal = RushTerminal {
+        program_name : String::from("rush"),
+    };
+
+    terminal.repl_loop();
 }
 
 fn is_builtin_command(command: &str, argument_vector: &[&str]) -> bool {
