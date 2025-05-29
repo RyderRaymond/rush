@@ -1,7 +1,11 @@
+use core::error;
 use std::env;
 use std::io::{self, Read, Write};
 use std::process::{exit, Command};
+use termion::cursor::DetectCursorPos;
+use termion::input::TermRead;
 use termion::raw::IntoRawMode;
+use termion::event::Key;
 //use std::env;
 
 struct RushTerminal {
@@ -31,7 +35,13 @@ impl RushTerminal {
             // .read_line(&mut command)
             // .expect("Quitting because we had a read error yippee");
 
-            let mut command = self.get_command();
+            let mut command = match self.get_command() {
+                Ok(string) => string,
+                Err(error) => {
+                    println!("Encountered error while getting command: {}", error);
+                    continue;
+                }
+            };
 
             //Remove trailing newline
             let newline_pos = command.rfind("\n");
@@ -85,49 +95,78 @@ impl RushTerminal {
         }
     }
 
-    fn get_command(&mut self) -> String {
+    fn get_command(&mut self) -> Result<String, io::Error> {
         let mut stdout = io::stdout().lock().into_raw_mode().unwrap();
         let mut stdin = io::stdin();
         let mut command = String::new();
+        let mut position_in_command: u16 = 0;
+        let original_cursor_position_on_screen = stdout.cursor_pos()?;
 
-        loop {
-            let mut buffer = [0; 1];
-
-            stdin.read_exact(&mut buffer).unwrap();
-
-            match buffer[0] {
-                13 => {
+        for k in stdin.keys() {
+            match k.as_ref().unwrap() {
+                Key::Char('\n') => {
                     command.push('\n');
                     write!(stdout, "\n\r");
                     stdout.flush();
                     break;
                 },
 
-                127 => {
-                    print!("{}", command.len());
+                Key::Char(c) => {
+                    command.insert(position_in_command.into(), *c);
+                    position_in_command += 1;
+                },
+
+                Key::Left => {
+                    if position_in_command > 0 {
+                        write!(stdout, "{}", termion::cursor::Left(1))?;
+                        stdout.flush()?;
+                        position_in_command -= 1;
+                    }
+                    continue;
+                },
+
+                Key::Right => {
+                    if usize::from(position_in_command) < command.len() {
+                        write!(stdout, "{}", termion::cursor::Right(1))?;
+                        stdout.flush()?;
+                        position_in_command += 1;
+                    }
+                    continue;
+                },
+
+                Key::Backspace => {
+                    if position_in_command > 0 {
+                        position_in_command -= 1;
+                    }
+
                     if command.len() > 0 {
                         command.pop();
-                        stdout.write(&[8, 32]);
-                        write!(stdout, "{}", termion::cursor::Left(1));
-                        stdout.flush();
-                        continue;
                     }
-                }
+                },
 
-                _ => ()
+                Key::Ctrl('c') => {
+                    write!(stdout, "\n\r");
+                    stdout.flush();
+                    return Ok(String::from(""));
+                },
+
+                _ => {
+                    println!("{:?}", k);
+                },
             }
 
-            let curr_char = match str::from_utf8(&buffer) {
-                Ok(ch) => ch,
-                Err(_) => continue,
-            };
+            stdout.flush()?;
+            write!(stdout, "{}{}",
+                termion::cursor::Goto(original_cursor_position_on_screen.0, original_cursor_position_on_screen.1),
+                command)?;
+            stdout.flush()?;
 
-            command.push_str(curr_char);
-            stdout.write(&buffer).unwrap();
-            stdout.flush().unwrap();
+            //write!(stdout, "{}", termion::cursor::Right(position_in_command))?;
+            //stdout.flush()?;
         }
 
-        return command;
+
+        return Ok(command);
     }
 
 
