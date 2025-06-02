@@ -134,6 +134,7 @@ impl RushTerminal {
                     continue;
                 },
 
+                //Going to need to make this actually remove at the right position
                 Key::Backspace => {
                     if position_in_command > 0 {
                         position_in_command -= 1;
