@@ -1,5 +1,5 @@
 use std::env;
-use std::io::{self, Write};
+use std::io::{self, stdout, Write};
 use std::process::{exit, Command};
 use termion::cursor::DetectCursorPos;
 use termion::input::TermRead;
@@ -9,6 +9,7 @@ use termion::event::Key;
 
 struct RushTerminal {
     program_name: String,
+    prompt: String,
 }
 
 impl RushTerminal {
@@ -24,8 +25,7 @@ impl RushTerminal {
 
         loop {
             io::stdout().flush();
-            write!(io::stdout(), "$ ");
-            io::stdout().flush().unwrap_or_else(|error| {
+            self.display_prompt().unwrap_or_else(|error| {
                 panic!("{name}Could not write shell prompt: {error:?}", name=self.program_name);
             });
 
@@ -80,17 +80,14 @@ impl RushTerminal {
 
             match command {
                 Ok(mut child) => {
-                    io::stdout().flush().expect("Failed to write to screen");
                     child.wait().expect("");
+                    io::stdout().flush().expect("Failed to write to screen");
                 },
                 Err(error) => {
                     println!("Failed to run command {command_name}: {}", error.to_string());
                     io::stdout().flush().expect("Failed to write to screen");
                 }
             }
-            io::stdout().flush();
-            write!(io::stdout(), "\n\r");
-            io::stdout().flush();
         }
     }
 
@@ -99,7 +96,7 @@ impl RushTerminal {
         let stdin = io::stdin();
         let mut command = String::new();
         let mut position_in_command: u16 = 0;
-        let original_cursor_position_on_screen = stdout.cursor_pos()?;
+        let mut original_cursor_position_on_screen = stdout.cursor_pos()?;
 
         for k in stdin.keys() {
             match k.as_ref().unwrap() {
@@ -149,6 +146,17 @@ impl RushTerminal {
                     stdout.flush()?;
                     return Ok(String::from(""));
                 },
+
+                Key::Ctrl('l') => {
+                    write!(stdout, "{}{}",
+                        termion::clear::All,
+                        termion::cursor::Goto(1, 1),
+                    )?;
+                    stdout.flush()?;
+
+                    self.display_prompt()?;
+                    original_cursor_position_on_screen = stdout.cursor_pos()?;
+                }
 
                 _ => {
                     println!("{:?}", k);
@@ -217,7 +225,14 @@ impl RushTerminal {
             _ => false
         }
     }
+
+    fn display_prompt(&mut self) -> Result<(), io::Error> {
+        write!(stdout(), "{}", self.prompt)?;
+        stdout().flush()?;
+        return Ok(());
+    }
 }
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -228,6 +243,7 @@ fn main() {
 
     let mut terminal = RushTerminal {
         program_name : String::from(prog_name),
+        prompt: String::from("username $$ "),
     };
 
     terminal.repl_loop();
