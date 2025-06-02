@@ -1,6 +1,5 @@
-use core::error;
 use std::env;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::process::{exit, Command};
 use termion::cursor::DetectCursorPos;
 use termion::input::TermRead;
@@ -97,7 +96,7 @@ impl RushTerminal {
 
     fn get_command(&mut self) -> Result<String, io::Error> {
         let mut stdout = io::stdout().lock().into_raw_mode().unwrap();
-        let mut stdin = io::stdin();
+        let stdin = io::stdin();
         let mut command = String::new();
         let mut position_in_command: u16 = 0;
         let original_cursor_position_on_screen = stdout.cursor_pos()?;
@@ -106,8 +105,8 @@ impl RushTerminal {
             match k.as_ref().unwrap() {
                 Key::Char('\n') => {
                     command.push('\n');
-                    write!(stdout, "\n\r");
-                    stdout.flush();
+                    write!(stdout, "\n\r")?;
+                    stdout.flush()?;
                     break;
                 },
 
@@ -136,18 +135,18 @@ impl RushTerminal {
 
                 //Going to need to make this actually remove at the right position
                 Key::Backspace => {
-                    if position_in_command > 0 {
+                    if position_in_command > 0 && usize::from(position_in_command) <= command.len() {
+                        command.remove(usize::from(position_in_command) - 1);
                         position_in_command -= 1;
                     }
-
-                    if command.len() > 0 {
-                        command.pop();
+                    else {
+                        continue;
                     }
                 },
 
                 Key::Ctrl('c') => {
-                    write!(stdout, "\n\r");
-                    stdout.flush();
+                    write!(stdout, "\n\r")?;
+                    stdout.flush()?;
                     return Ok(String::from(""));
                 },
 
@@ -157,13 +156,15 @@ impl RushTerminal {
             }
 
             stdout.flush()?;
-            write!(stdout, "{}{}",
+            write!(stdout, "{}{}{}",
                 termion::cursor::Goto(original_cursor_position_on_screen.0, original_cursor_position_on_screen.1),
+                termion::clear::UntilNewline,
                 command)?;
+
             stdout.flush()?;
 
-            //write!(stdout, "{}", termion::cursor::Right(position_in_command))?;
-            //stdout.flush()?;
+            write!(stdout, "{}", termion::cursor::Goto(original_cursor_position_on_screen.0 + position_in_command, original_cursor_position_on_screen.1))?;
+            stdout.flush()?;
         }
 
 
